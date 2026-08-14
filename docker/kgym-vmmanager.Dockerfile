@@ -1,9 +1,23 @@
-FROM golang:1.24.6-bookworm AS syzkaller
+# syzkaller is cloned from upstream at build time. Pin it to the same commit the
+# kvmmanager runtime uses by default (SYZKALLER_DEFAULT_COMMIT in
+# kvmmanager/KBDr/kvmmanager/syzkaller.py) so that image builds are reproducible
+# and cannot be broken by upstream changes such as a newer Go requirement.
+ARG SYZKALLER_COMMIT=ca620dd8f97f5b3a9134b687b5584203019518fb
+
+# Go toolchain used both to build syzkaller in this stage and by the runtime
+# syzkaller builds. It must satisfy the `go` directive of SYZKALLER_COMMIT.
+ARG GO_VERSION=1.24.6
+
+FROM golang:${GO_VERSION}-bookworm AS syzkaller
 
 WORKDIR /
 RUN apt update && apt install git -y && git clone https://github.com/google/syzkaller.git
 WORKDIR /syzkaller
-RUN make all crush -j$(nproc)
+ARG SYZKALLER_COMMIT
+# Cap build parallelism: building syzkaller with -j$(nproc) can OOM lower-memory
+# machines. Override with `--build-arg BUILD_JOBS=<n>` (e.g. BUILD_JOBS=2).
+ARG BUILD_JOBS=4
+RUN git checkout ${SYZKALLER_COMMIT} && make all crush -j${BUILD_JOBS}
 
 FROM python:3.11-bookworm AS kvmmanager-base
 
@@ -14,7 +28,8 @@ WORKDIR /root
 COPY --from=syzkaller /syzkaller/bin/syz-crush /usr/local/bin/syz-crush
 
 # Install Golang toolchain;
-RUN wget "https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz" -O go.tar.gz && tar -C /usr/local -xzf go.tar.gz
+ARG GO_VERSION
+RUN wget "https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz" -O go.tar.gz && tar -C /usr/local -xzf go.tar.gz
 ENV GOROOT=/usr/local/go
 ENV PATH=$GOROOT/bin:$PATH
 

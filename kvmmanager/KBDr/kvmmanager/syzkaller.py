@@ -2,7 +2,12 @@
 import asyncio.subprocess as asp
 from KBDr.kcore import JobExceptionError
 
-async def prepare_syzkaller(syzkaller_path: str, checkout_name: str, rollback: bool, latest_tag: str='ca620dd8f97f5b3a9134b687b5584203019518fb') -> str:
+# Default syzkaller checkout used when a job does not request a specific one.
+# Keep in sync with SYZKALLER_COMMIT in docker/kgym-vmmanager.Dockerfile so that
+# the image build and the runtime builds use the same source revision.
+SYZKALLER_DEFAULT_COMMIT = 'ca620dd8f97f5b3a9134b687b5584203019518fb'
+
+async def prepare_syzkaller(syzkaller_path: str, checkout_name: str, rollback: bool, latest_tag: str=SYZKALLER_DEFAULT_COMMIT) -> str:
     # not necessary to rollback if it's already preparing ca620dd8f97f5b3a9134b687b5584203019518fb;
     rollback = rollback and (checkout_name != latest_tag)
 
