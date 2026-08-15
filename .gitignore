@@ -169,3 +169,7 @@ experiments/
 
 # kGym image
 kGym-images/
+
+# middle product
+deployment/example
+deployment/local/kscheduler-db
