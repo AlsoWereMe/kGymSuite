@@ -167,7 +167,8 @@ cython_debug/
 dev-conf/
 experiments/
 
-# kGym image
+# data
+data/
 kGym-images/
 
 # middle product
