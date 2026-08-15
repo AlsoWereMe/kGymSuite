@@ -2,12 +2,7 @@
 import asyncio.subprocess as asp
 from KBDr.kcore import JobExceptionError
 
-# Default syzkaller checkout used when a job does not request a specific one.
-# Keep in sync with SYZKALLER_COMMIT in docker/kgym-vmmanager.Dockerfile so that
-# the image build and the runtime builds use the same source revision.
-SYZKALLER_DEFAULT_COMMIT = 'ca620dd8f97f5b3a9134b687b5584203019518fb'
-
-async def prepare_syzkaller(syzkaller_path: str, checkout_name: str, rollback: bool, latest_tag: str=SYZKALLER_DEFAULT_COMMIT) -> str:
+async def prepare_syzkaller(syzkaller_path: str, checkout_name: str, rollback: bool, latest_tag: str='ca620dd8f97f5b3a9134b687b5584203019518fb') -> str:
     # not necessary to rollback if it's already preparing ca620dd8f97f5b3a9134b687b5584203019518fb;
     rollback = rollback and (checkout_name != latest_tag)
 
@@ -56,7 +51,7 @@ async def prepare_syzkaller(syzkaller_path: str, checkout_name: str, rollback: b
         raise JobExceptionError('kvmmanager.SyzkallerBuildError', f'Failed to checkout syzkaller:{checkout_name}')
     # make target;
     proc = await asp.create_subprocess_exec(
-        'make', 'target', '-j8', stdin=asp.DEVNULL, stderr=asp.DEVNULL,
+        'make', 'target', '-j4', stdin=asp.DEVNULL, stderr=asp.DEVNULL,
         stdout=asp.DEVNULL, cwd=syzkaller_path
     )
     code = await proc.wait()
