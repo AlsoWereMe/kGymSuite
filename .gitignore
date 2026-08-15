@@ -166,3 +166,6 @@ cython_debug/
 # dev;
 dev-conf/
 experiments/
+
+# kGym image
+kGym-images/
