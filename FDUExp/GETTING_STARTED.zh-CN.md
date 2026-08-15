@@ -150,11 +150,3 @@ DEPLOYMENT=local docker compose -f ./deployment/local/compose.yml ps
 服务的端口位置在：
 - Dashboard: http://localhost:3000
 - API: http://localhost:8000/docs
-
-### Jobs
-部署好后，提交一个任务来测试是否真的能跑通整个评估流程，然后使用kBench进行批量测试。
-官方的数据集在同样在hugging face上，将其存储到制定文件夹内
-```bash
-hf download chenxi-kalorona-huang/kbench --repo-type dataset --local-dir ./data/kbench
-```
-一条数据中，提交给LLM做修复的应当只有他的title和rawCrashReport部分信息，parentOfFixCommit是坏内核的提交ID，这三个是要用到的。
