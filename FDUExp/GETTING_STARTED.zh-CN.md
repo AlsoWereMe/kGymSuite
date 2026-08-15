@@ -95,15 +95,15 @@ free -h && swapon --show            # 验证
 
 ## Deploy
 ### Local Storage
-首先配置本地存储相关的设置。
+首先配置本地存储相关的设置，官方文档中这里的example需要替换成local，compose文件里挂载的就是local
 ```bash
-mkdir -p ./deployment/example/bucket/userspace-images
-mkdir -p ./deployment/example/bucket/jobs
+mkdir -p ./deployment/local/bucket/userspace-images
+mkdir -p ./deployment/local/bucket/jobs
 hf download chenxi-kalorona-huang/kGym-images \
   --repo-type dataset \
   --local-dir ./kGym-images
-cp kGym-images/buildroot.raw ./deployment/example/bucket/userspace-images/
-cp kGym-images/bullseye.raw ./deployment/example/bucket/userspace-images/
+cp kGym-images/buildroot.raw ./deployment/local/bucket/userspace-images/
+cp kGym-images/bullseye.raw ./deployment/local/bucket/userspace-images/
 ```
 
 接下来更改容器相关的config.json
@@ -157,3 +157,4 @@ DEPLOYMENT=local docker compose -f ./deployment/local/compose.yml ps
 ```bash
 hf download chenxi-kalorona-huang/kbench --repo-type dataset --local-dir ./data/kbench
 ```
+一条数据中，提交给LLM做修复的应当只有他的title和rawCrashReport部分信息，parentOfFixCommit是坏内核的提交ID，这三个是要用到的。
