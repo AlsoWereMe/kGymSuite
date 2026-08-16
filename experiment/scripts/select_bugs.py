@@ -1,7 +1,7 @@
 """随机从 kbench 数据集中挑选 N 条 bug，供批量实验使用。
 
 用法:
-  .venv/bin/python select_bugs.py --n 20 [--seed 42] [--out experiment/bugs.json]
+  .venv/bin/python select_bugs.py --n 10 [--seed 42] [--out experiment/bugs.json]
 
 输出 experiment/bugs.json: {"seed":..., "count":..., "bugs":[...]}
 注意: 已剔除 ground-truth 字段 patch/patchMessage，防止泄漏给 LLM。
@@ -20,7 +20,7 @@ STRIP_FIELDS = ("patch", "patchMessage")
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--n", type=int, default=20, help="挑选条数 (默认 20)")
+    ap.add_argument("--n", type=int, default=10, help="挑选条数 (默认 10)")
     ap.add_argument("--seed", type=int, default=None, help="随机种子; 不传则真随机并打印种子")
     ap.add_argument("--out", default="experiment/bugs.json")
     args = ap.parse_args()
