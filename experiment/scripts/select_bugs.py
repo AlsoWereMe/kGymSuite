@@ -12,8 +12,7 @@ import os
 import random
 
 POOL = [
-    "data/kbench/dataset-kb-25.json",
-    "data/kbench/dataset-kmsan.json",
+    # 只从经典 kBenchSyz 主基准 (kb) 抽, 不用 kb-25 / kmsan
     "data/kbench/dataset-kb.json",
 ]
 STRIP_FIELDS = ("patch", "patchMessage")

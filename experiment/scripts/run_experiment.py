@@ -1,25 +1,28 @@
 """批量评估编排: 2 个 job 并行, 每完成一个自动补一个, 直到全部跑完。
 
 输入:
-  experiment/bugs.json      (select_bugs.py 产出)
-  experiment/patches.json   (generate_patches.py 产出)
+  <base>/bugs.json      (select_bugs.py 产出)
+  <base>/patches.json   (generate_patches.py 产出)
 输出:
-  experiment/results/<bugId>.json   每个 job 的完整 JobContext
-  experiment/results.json           汇总 (status / evaluation / crashes / imageAbility / exceptions)
+  <base>/results/<bugId>.json   每个 job 的完整 JobContext
+  <base>/results.json           汇总 (status / evaluation / crashes / imageAbility / exceptions)
+  <base>/inflight.json          在跑 job 的 jobId 映射 (Ctrl+C 清理用)
 
-断点续跑: 已写入 results.json 且 status 为 finished/aborted 的 bug 会被跳过;
-可反复重启该脚本, 直到全部完成。中断(Ctrl+C)不会丢已完成的结果。
+断点续跑: 已写入 results.json 且 status 为 finished/aborted 的 bug 会被跳过。
+Ctrl+C: 自动 abort 在跑 job 并保存结果, 可随时重启续跑。
 
 用法:
-  .venv/bin/python run_experiment.py
+  .venv/bin/python run_experiment.py --base experiment/<模型>
 """
+import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
 import time
 
-from KBDr.kclient import kGymAsyncClient
+from KBDr.kclient import kGymAsyncClient, kGymClient
 from KBDr.kcore import JobStatus
 
 from job_submit import build_request
@@ -28,13 +31,24 @@ API = "http://localhost:8000"
 MAX_PARALLEL = 2          # 并行 job 数
 POLL_INTERVAL = 30        # 轮询间隔(秒)
 MAX_JOB_TIME = 3 * 3600   # 单 job 超时(秒), 超时 abort 并记 timeout
+PENDING_WARN = 15 * 60    # job 停留在 pending/waiting 超过此时长开始打印警告
 IMAGE = "buildroot.raw"
 MACHINE_TYPE = "qemu:2-4096"
 NINSTANCE = 1
 BASE = "experiment"
-TAG = "deepseek-v4-flash-batch"
+TAG = "batch"
 
 TERMINAL = (JobStatus.Finished, JobStatus.Aborted)
+
+
+@contextlib.asynccontextmanager
+async def _client():
+    # kGymAsyncClient 未实现 __aenter__/__aexit__, 这里包一层显式 close
+    client = kGymAsyncClient(API)
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 def summarize(ctx) -> dict:
@@ -72,10 +86,10 @@ def save_results(results: dict):
 
 async def main_async() -> int:
     if not os.path.exists(os.path.join(BASE, "bugs.json")):
-        print("缺少 experiment/bugs.json, 请先运行 select_bugs.py", file=sys.stderr)
+        print("缺少 " + os.path.join(BASE, "bugs.json") + ", 请先运行 select_bugs.py", file=sys.stderr)
         return 1
     if not os.path.exists(os.path.join(BASE, "patches.json")):
-        print("缺少 experiment/patches.json, 请先运行 generate_patches.py", file=sys.stderr)
+        print("缺少 " + os.path.join(BASE, "patches.json") + ", 请先运行 generate_patches.py", file=sys.stderr)
         return 1
 
     bugs = json.load(open(os.path.join(BASE, "bugs.json")))["bugs"]
@@ -102,8 +116,15 @@ async def main_async() -> int:
         print("没有待提交的 bug, 退出")
         return 0
 
-    async with kGymAsyncClient(API) as client:
-        inflight: dict[str, dict] = {}
+    inflight: dict[str, dict] = {}
+    inflight_path = os.path.join(BASE, "inflight.json")
+
+    def save_inflight():
+        with open(inflight_path, "w") as fp:
+            json.dump({b: str(st["job_id"]) for b, st in inflight.items()}, fp)
+
+    async with _client() as client:
+        hb = 0   # 心跳计数: 每 10 分钟打印一次各 job 真实状态
         try:
             while queue or inflight:
                 # 补位: 保持 MAX_PARALLEL 个在跑
@@ -124,21 +145,31 @@ async def main_async() -> int:
                         save_results(results)
                         continue
                     inflight[bid] = {"job_id": jid, "submitted": time.time()}
+                    save_inflight()
                     print(f"[提交] {bid[:12]} -> {jid}  (在跑 {len(inflight)}/{MAX_PARALLEL}, 剩余 {len(queue)})")
 
                 if not inflight:
                     break
 
                 await asyncio.sleep(POLL_INTERVAL)
+                hb += 1
 
                 done = []
                 for bid, st in inflight.items():
                     try:
                         ctx = await client.get_job(st["job_id"])
                     except Exception:
-                        continue  # 网络抖动, 下轮再看
+                        if hb % 20 == 0:
+                            print(f"[心跳] {bid[:12]} {st['job_id']} 查询失败(网络抖动), 下轮重试")
+                        continue
                     if ctx is None:
                         continue
+                    el = int(time.time() - st["submitted"])
+                    if hb % 20 == 0:   # 20 * 30s = 10 分钟
+                        print(
+                            f"[心跳] {bid[:12]} {st['job_id']} 状态={ctx.status.value} "
+                            f"已提交 {el//60}m{el%60:02d}s (队列中共 {len(inflight)} 个 job)"
+                        )
                     if ctx.status in TERMINAL:
                         done.append(bid)
                         sm = summarize(ctx)
@@ -150,7 +181,13 @@ async def main_async() -> int:
                             f"status={sm['status']} eval={sm.get('evaluation')} "
                             f"crashes={len(sm.get('crashes', []))} excs={sm.get('exceptions')}"
                         )
-                    elif time.time() - st["submitted"] > MAX_JOB_TIME:
+                        continue
+                    if ctx.status in (JobStatus.Pending, JobStatus.Waiting) and el > PENDING_WARN:
+                        print(
+                            f"[警告] {bid[:12]} {st['job_id']} 已 {el//60}m 未被 worker 领取"
+                            f"(状态={ctx.status.value}): 检查 kmq/kbuilder/kvmmanager 是否正常"
+                        )
+                    if el > MAX_JOB_TIME:
                         done.append(bid)
                         try:
                             await client.abort_job(st["job_id"])
@@ -161,17 +198,19 @@ async def main_async() -> int:
 
                 for bid in done:
                     inflight.pop(bid, None)
+                save_inflight()
                 save_results(results)
-        except KeyboardInterrupt:
-            print("\n中断: 正在 abort 在跑的 job...")
-            for bid, st in inflight.items():
-                try:
-                    await client.abort_job(st["job_id"])
-                    print(f"  aborted {bid[:12]} {st['job_id']}")
-                except Exception:
-                    pass
+        finally:
             save_results(results)
-            return 130
+            if inflight:
+                print("清理: 中止仍在跑的 job ...")
+                for bid, st in inflight.items():
+                    try:
+                        await client.abort_job(st["job_id"])
+                        print(f"  aborted {bid[:12]} {st['job_id']}")
+                    except BaseException:
+                        pass
+            save_inflight()
 
     finished = sum(1 for v in results.values() if v.get("status") in ("finished", "aborted"))
     print(f"全部结束: 共 {finished} 条完成 -> {results_path}")
@@ -179,7 +218,30 @@ async def main_async() -> int:
 
 
 def main() -> int:
-    return asyncio.run(main_async())
+    global BASE
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", default=BASE, help="实验目录 (默认 experiment)")
+    args = ap.parse_args()
+    BASE = args.base
+    try:
+        return asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print(chr(10) + "收到 Ctrl+C, 尝试中止在跑 job ...")
+        inf_path = os.path.join(BASE, "inflight.json")
+        if os.path.exists(inf_path):
+            try:
+                inflight = json.load(open(inf_path))
+            except Exception:
+                inflight = {}
+            client = kGymClient(API)
+            for bid, jid in inflight.items():
+                try:
+                    client.abort_job(jid)
+                    print(f"  aborted {bid[:12]} {jid}")
+                except Exception as e:
+                    print(f"  abort 失败 {bid[:12]} {jid}: {e}")
+            client.close()
+        return 130
 
 
 if __name__ == "__main__":
