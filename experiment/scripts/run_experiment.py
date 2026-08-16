@@ -1,4 +1,4 @@
-"""批量评估编排: 2 个 job 并行, 每完成一个自动补一个, 直到全部跑完。
+"""批量评估编排: 串行执行 (同一时刻只跑 1 个 job), 每完成一个自动补一个, 直到全部跑完。
 
 输入:
   <base>/bugs.json      (select_bugs.py 产出)
@@ -28,7 +28,7 @@ from KBDr.kcore import JobStatus
 from job_submit import build_request
 
 API = "http://localhost:8000"
-MAX_PARALLEL = 2          # 并行 job 数
+MAX_PARALLEL = 1          # 并行 job 数 (机器资源有限, 串行执行)
 POLL_INTERVAL = 30        # 轮询间隔(秒)
 MAX_JOB_TIME = 3 * 3600   # 单 job 超时(秒), 超时 abort 并记 timeout
 PENDING_WARN = 15 * 60    # job 停留在 pending/waiting 超过此时长开始打印警告
