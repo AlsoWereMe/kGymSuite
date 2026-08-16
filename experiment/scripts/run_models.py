@@ -17,7 +17,7 @@
   python experiment/scripts/run_models.py --only glm-5.2   # 只跑某个模型(文件夹名)
   python experiment/scripts/run_models.py --skip-gen       # 跳过补丁生成, 直接提交评估
   python experiment/scripts/run_models.py --skip-eval      # 只生成补丁, 不提交
-  python experiment/scripts/run_models.py --n 20 --reselect   # 重新随机选一批 bug
+  python experiment/scripts/run_models.py --n 10 --reselect   # 重新随机选一批 bug
   python experiment/scripts/run_models.py --dry-run        # 只打印计划, 不执行
 """
 import argparse
@@ -30,8 +30,7 @@ import sys
 MODELS = [
     "qwen/qwen3.8-max",
     "moonshotai/kimi-k3",
-    "z-ai/glm-5.2",
-    "deepseek/deepseek-v4-pro-0813",
+    "z-ai/glm-5.2"
 ]
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))   # experiment/scripts
 EXPERIMENT = os.path.dirname(SCRIPTS_DIR)                  # experiment 根目录
@@ -87,7 +86,7 @@ def run_one(model: str, folder: str, skip_gen: bool, skip_eval: bool, dry: bool)
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--models", default=",".join(MODELS), help="逗号分隔的模型列表(OpenRouter slug)")
-    ap.add_argument("--n", type=int, default=20)
+    ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--reselect", action="store_true", help="重新随机选 bug")
     ap.add_argument("--skip-gen", action="store_true")
