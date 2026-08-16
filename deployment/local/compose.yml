@@ -6,6 +6,14 @@ services:
       context: ./
       dockerfile: docker/kgym-mq.Dockerfile
     restart: unless-stopped
+    # 日志轮转: 防止容器 stdout/stderr 无上限膨胀吃满磁盘
+    # (教训: kscheduler 曾因 MQ 重连 traceback 刷爆 346GB json 日志)
+    # 单文件上限 50MB, 最多保留 3 份, 每容器日志总量封顶 150MB
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - 5672:5672
     healthcheck:
@@ -22,6 +30,12 @@ services:
       dockerfile: docker/kgym-scheduler.Dockerfile
       target: release
     restart: unless-stopped
+    # 日志轮转: 防止 stdout/stderr 无上限膨胀吃满磁盘 (346GB 事故的兜底)
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - 8000:8000
     environment:
@@ -44,6 +58,12 @@ services:
       context: ./
       dockerfile: docker/kgym-dashboard.Dockerfile
     restart: unless-stopped
+    # 日志轮转: 防止 stdout/stderr 无上限膨胀吃满磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - 3000:3000
     volumes:
@@ -61,6 +81,12 @@ services:
       mode: replicated
       replicas: 4
     restart: unless-stopped
+    # 日志轮转: 防止 stdout/stderr 无上限膨胀吃满磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     devices:
       - /dev/kvm:/dev/kvm
     volumes:
@@ -77,6 +103,12 @@ services:
       dockerfile: docker/kgym-builder.Dockerfile
       target: release
     restart: unless-stopped
+    # 日志轮转: 防止 stdout/stderr 无上限膨胀吃满磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     deploy:
       mode: replicated
       replicas: 2
@@ -97,6 +129,12 @@ services:
       dockerfile: docker/kgym-prebuilder.Dockerfile
       target: release
     restart: unless-stopped
+    # 日志轮转: 防止 stdout/stderr 无上限膨胀吃满磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     volumes:
       - ./bucket:/mnt/bucket
     env_file:
