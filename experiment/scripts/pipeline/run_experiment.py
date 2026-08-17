@@ -7,6 +7,8 @@
   <base>/results/<bugId>.json   每个 job 的完整 JobContext
   <base>/results.json           汇总 (status / evaluation / crashes / imageAbility / exceptions)
   <base>/inflight.json          在跑 job 的 jobId 映射 (Ctrl+C 清理用)
+  <base>/stats.json             全部 job 跑完后自动运行 analyze_results.py 产出
+                                (abort/修复成败占比 + 失败原因 + 花费/耗时/重试统计)
 
 断点续跑: 已写入 results.json 且 status 为 finished/aborted 的 bug 会被跳过。
 Ctrl+C: 自动 abort 在跑 job 并保存结果, 可随时重启续跑。
@@ -19,6 +21,7 @@ import asyncio
 import contextlib
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -217,14 +220,34 @@ async def main_async() -> int:
     return 0
 
 
+def run_auto_stats(skip: bool = False):
+    """所有 job 跑完后自动运行 analyze_results.py, 产出 <base>/stats.json。"""
+    if skip or not os.path.exists(os.path.join(BASE, "results.json")):
+        return
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "analyze_results.py")
+    cmd = [sys.executable, script, "--base", BASE]
+    # 若本地 scheduler.db 存在, 一并交叉校验 dashboard 记录
+    # (本脚本在 pipeline/ 下, 仓库根 = __file__ 上溯 4 层)
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    db = os.path.join(repo_root, "deployment", "local", "kscheduler-db", "scheduler.db")
+    if os.path.exists(db):
+        cmd += ["--db", db]
+    print(chr(10) + "===== 自动运行统计脚本 =====")
+    subprocess.run(cmd, check=False)
+    print("===== 统计完成 =====")
+
+
 def main() -> int:
     global BASE
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default=BASE, help="实验目录 (默认 experiment)")
+    ap.add_argument("--skip-stats", action="store_true", help="跑完不自动运行统计脚本")
     args = ap.parse_args()
     BASE = args.base
     try:
-        return asyncio.run(main_async())
+        rc = asyncio.run(main_async())
+        run_auto_stats(skip=args.skip_stats)
+        return rc
     except KeyboardInterrupt:
         print(chr(10) + "收到 Ctrl+C, 尝试中止在跑 job ...")
         inf_path = os.path.join(BASE, "inflight.json")
@@ -241,6 +264,7 @@ def main() -> int:
                 except Exception as e:
                     print(f"  abort 失败 {bid[:12]} {jid}: {e}")
             client.close()
+        run_auto_stats(skip=args.skip_stats)
         return 130
 
 
