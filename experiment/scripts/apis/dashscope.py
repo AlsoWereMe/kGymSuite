@@ -7,7 +7,7 @@
           用户档位 "max" 自动映射为 xhigh
 
 独立冒烟测试 (在 experiment/scripts 目录下):
-  DASHSCOPE_API_KEY=sk-... python apis/dashscope.py --model qwen3.8-max --effort max
+  DASHSCOPE_API_KEY=sk-... python apis/dashscope.py --model qwen3.8-max --effort high
 """
 import argparse
 import json
@@ -60,7 +60,7 @@ def chat_completion(*, model, prompt, effort="", api_key="", style=None,
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", required=True, help="模型名 (如 qwen3.8-max)")
-    ap.add_argument("--effort", default="max", help="推理强度 (low/medium/high/max, max->xhigh)")
+    ap.add_argument("--effort", default="high", help="推理强度 (low/medium/high/max, max->xhigh)")
     ap.add_argument("--style", default=None, help="线格式 (默认 " + DEFAULT_EFFORT_STYLE + ")")
     ap.add_argument("--prompt", default="Reply with exactly two characters: OK")
     ap.add_argument("--api-base", default=None, help="覆盖默认接口地址")

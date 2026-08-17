@@ -46,17 +46,17 @@ import sys
 # 价格来源: 用户提供的官方定价页报价 (2026-08)
 MODELS = [
     {"slug": "qwen3.8-max", "provider": "dashscope", "apiKeyEnv": "DASHSCOPE_API_KEY",
-     "reasoningEffort": "max", "effortStyle": "",
+     "reasoningEffort": "high", "effortStyle": "",
      "pricing": {"currency": "CNY", "inputPerM": 12, "inputHitPerM": 1.5, "outputPerM": 36}},
     {"slug": "kimi-k3", "provider": "moonshot", "apiKeyEnv": "MOONSHOT_API_KEY",
-     "reasoningEffort": "max", "effortStyle": "",   # K3 用顶层 reasoning_effort (平台默认线格式)
+     "reasoningEffort": "high", "effortStyle": "",   # K3 用顶层 reasoning_effort (平台默认线格式)
      "pricing": {"currency": "CNY", "inputPerM": 20, "inputHitPerM": 2, "outputPerM": 100}},
     # glm-5.2 暂不可用 (官方账号实名认证未完成), 恢复后取消注释并填 pricing
     # {"slug": "glm-5.2", "provider": "zhipu", "apiKeyEnv": "ZHIPU_API_KEY",
-    #  "reasoningEffort": "max", "effortStyle": "",   # GLM-5.2 默认 thinking + reasoning_effort
+    #  "reasoningEffort": "high", "effortStyle": "",   # GLM-5.2 默认 thinking + reasoning_effort
     #  "pricing": {"currency": "CNY", "inputPerM": None, "outputPerM": None}},
 ]
-DEFAULT_REASONING_EFFORT = "max"
+DEFAULT_REASONING_EFFORT = "high"
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))      # experiment/scripts/pipeline
 EXPERIMENT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))    # experiment 根目录
 SHARED_BUGS = os.path.join(EXPERIMENT, "shared-bugs.json")

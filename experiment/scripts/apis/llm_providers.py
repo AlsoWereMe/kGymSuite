@@ -8,7 +8,7 @@
 本模块是上层统一入口, 调用方式:
     from apis.llm_providers import PROVIDERS, chat_completion
     r = chat_completion(provider="dashscope", model="qwen3.8-max",
-                        prompt="...", effort="max", api_key=...)
+                        prompt="...", effort="high", api_key=...)
 
 PROVIDERS 为各平台脚本元信息的汇总: {平台名: {url, apiKeyEnv, defaultStyle, effortMap}}
 """
