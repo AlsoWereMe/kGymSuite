@@ -8,7 +8,8 @@
     │   ├── llm_providers.py        API 分发器 (上层统一入口, 按 provider 名路由到各平台脚本)
     │   ├── dashscope.py            通义千问 (DASHSCOPE_API_KEY)
     │   ├── moonshot.py             Kimi (MOONSHOT_API_KEY)
-    │   └── zhipu.py                智谱 GLM (ZHIPU_API_KEY)
+    │   ├── zhipu.py                智谱 GLM (ZHIPU_API_KEY)
+    │   └── openrouter.py           OpenRouter 聚合入口 (OPENROUTER_API_KEY, 临时)
     ├── pipeline/                  生成 / 评估 patch 流程脚本
     │   ├── select_bugs.py           随机挑 N 条 bug (剔除 ground-truth patch 防泄漏)
     │   ├── generate_patches.py      直连官方平台生成补丁 (共享 prompt + 源码片段缓存)
@@ -28,8 +29,8 @@ experiment/shared-bugs.json     {"seed","count","bugs":[...]}
         │ pipeline/generate_patches.py  直连官方平台 (apis/), prompt 写到共享目录
         ▼
 experiment/prompts/<bugId>.txt  实验根目录共享, 所有模型复用同一份 prompt
-experiment/<model>/patches/     每个模型目录存各自的回复/补丁/结果
-        │ pipeline/run_experiment.py    构造 job (import pipeline/job_submit) → 提交 :8000
+experiment/<model>/patches/     每个模型目录存各自的回复/补丁
+        │ pipeline/run_experiment.py    生成完立刻构造 job → 提交 :8000
         ▼
 experiment/<model>/results.json  + results/<bugId>.json (完整 JobContext)
         │ pipeline/analyze_results.py   (run_experiment 跑完后自动调用)
@@ -38,9 +39,9 @@ experiment/<model>/stats.json    abort/修复成败占比 + 失败原因 + 花�
 ```
 
 ```
-pipeline/run_models.py (批量司机)
+pipeline/run_models.py (批量司机, 按模型串行)
   ├─ 首次运行调 pipeline/select_bugs.py → shared-bugs.json (各模型共用同一批, 保证可比)
-  └─ 每个模型目录子进程依次跑 pipeline/generate_patches.py → pipeline/run_experiment.py
+  └─ 每个模型: pipeline/generate_patches.py 生成补丁 → 立刻 pipeline/run_experiment.py 提交评估
        (通过 --provider/--api-key-env/--reasoning-effort/--price-* 指定平台与计价)
 ```
 
@@ -57,6 +58,7 @@ API 平台 (apis/ 每个平台一个脚本, 统一接口 chat_completion(...)):
 
 | 平台 | 脚本 | key 环境变量 | 推理强度线格式 |
 |---|---|---|---|
-| 通义千问 | apis/dashscope.py | DASHSCOPE_API_KEY | reasoning_effort (max → xhigh) |
-| Kimi | apis/moonshot.py | MOONSHOT_API_KEY | 顶层 reasoning_effort (K3: low/high/max) |
-| 智谱 GLM | apis/zhipu.py | ZHIPU_API_KEY | thinking: {type} + reasoning_effort (GLM-5.2+) |
+| Qwen3.8 Max (临时经 OpenRouter) | apis/openrouter.py | OPENROUTER_API_KEY | reasoning:{effort} = xhigh |
+| Kimi K3 (临时经 OpenRouter) | apis/openrouter.py | OPENROUTER_API_KEY | reasoning:{effort} = max |
+| GLM 5.2 (临时经 OpenRouter) | apis/openrouter.py | OPENROUTER_API_KEY | reasoning:{effort} = xhigh |
+| (官方直连备用) DashScope/Moonshot/智谱 | apis/{dashscope,moonshot,zhipu}.py | 各自 key | 各自线格式 (见各脚本) |

@@ -12,7 +12,8 @@ prompt 共享与一致性:
   - 片段从 fix commit 的父提交 (parentOfFixCommit) 抓取, 作为有依据的代码上下文。
 
 输出 (<base> 即模型目录 experiment/<model>):
-  replies/<bugId>.txt       模型原始回复 (含重试轮次 attN 存档)
+  replies/completion/<bugId>.txt   模型正文回复
+  replies/reasoning/<bugId>.txt    模型思考链 (reasoning, 有则保存)
   patches/<bugId>.patch     提取出的补丁
   patches.json              生成清单 (可断点续跑: 成功过的会跳过)
   generation-stats.json     每条回复的耗时/花费/重试次数统计 (供 analyze_results.py 合并)
@@ -56,14 +57,14 @@ BUGS_PATH = os.path.join(BASE, "bugs.json")
 INCLUDE_SOURCE = True          # 是否把坏内核相关源码放进 prompt (显著提高 git apply 命中率)
 SOURCE_MAX_FILES = 3           # 每个 bug 最多抓取的文件数
 FETCH_TIMEOUT = 30             # 单文件抓取超时(秒)
-MODEL_TIMEOUT = 2400           # 单条模型请求超时(秒)
+MODEL_TIMEOUT = int(os.environ.get("KGym_MODEL_TIMEOUT", "3600") or 3600)   # 单条模型请求超时(秒), 默认 1 小时
 RETRIES = 2                    # 提取不到 diff 时的额外重试次数 (共最多 1+2=3 次尝试)
 MODEL = os.environ.get("KGym_MODEL", "")
 PROVIDER = os.environ.get("KGym_PROVIDER", "dashscope")   # dashscope / moonshot / zhipu
 API_KEY_ENV = os.environ.get("KGym_API_KEY_ENV", "")      # 为空则取平台默认 key 环境变量
 API_BASE = os.environ.get("KGym_API_BASE", "")            # 覆盖平台默认接口地址
 EFFORT_STYLE = os.environ.get("KGym_EFFORT_STYLE", "")    # 覆盖平台默认 effort 线格式
-MAX_TOKENS = int(os.environ.get("KGym_MAX_TOKENS", "0") or 0)      # >0 时写入 max_tokens (应对推理模型输出被吃光)
+MAX_TOKENS = int(os.environ.get("KGym_MAX_TOKENS", "131072") or 131072)  # 默认最大总输出 128K; OpenRouter 写 max_completion_tokens
 REASONING_EFFORT = os.environ.get("KGym_REASONING_EFFORT", "high")  # 推理强度, 每个模型单独配置
 PRICE_INPUT_PER_M = float(os.environ.get("KGym_PRICE_INPUT_PER_M", "0") or 0) or None   # 输入单价-缓存未命中 (元/百万 token)
 PRICE_INPUT_HIT_PER_M = float(os.environ.get("KGym_PRICE_INPUT_HIT_PER_M", "0") or 0) or None  # 输入单价-缓存命中
@@ -209,7 +210,10 @@ def token_cost(usage: dict):
 def model_chat(prompt: str):
     """直连官方平台 (apis.llm_providers.chat_completion) 调用模型。
 
-    返回 (回复文本, usage 字典)。usage 以平台实际返回为准 (一般只含 token 数)。
+    成功时返回字典: {content, usage, reasoning, finishReason}。
+    content 为模型正文 (可能为空), reasoning 为思考链 (可能为空),
+    usage 以平台实际返回为准 (一般只含 token 数)。
+    HTTP 错误/缺 key 等仍抛 RuntimeError。
     """
     if PROVIDER not in PROVIDERS:
         raise RuntimeError(f"未知平台 {PROVIDER}, 可选: {sorted(PROVIDERS)}")
@@ -233,26 +237,33 @@ def model_chat(prompt: str):
     )
     if not r["ok"]:
         raise RuntimeError(f"HTTP {r.get('httpStatus')}: {r.get('error', '')[:400]}")
-    if not r.get("content"):
-        raise RuntimeError(
-            "模型返回空内容: finish_reason=" + str(r.get("finishReason"))
-            + ", usage=" + json.dumps(r.get("usage", {}))
-        )
-    return r["content"], r.get("usage") or {}
+    return {
+        "content": r.get("content") or "",
+        "usage": r.get("usage") or {},
+        "reasoning": r.get("reasoning") or "",
+        "finishReason": r.get("finishReason"),
+    }
 
 
 def run_model(prompt: str, label: str = ""):
     """在后台线程调用模型, 主线程输出旋转等待条(说明未卡死)。
 
-    返回 SimpleNamespace(stdout=回复文本, stderr=错误文本, returncode, elapsed, usage)。
+    返回 SimpleNamespace(stdout=回复文本, stderr=错误文本, returncode, elapsed,
+                         usage, reasoning)。
     """
     result = {}
 
     def worker():
         try:
-            reply, usage = model_chat(prompt)
-            result["reply"] = reply
-            result["usage"] = usage or {}
+            chat = model_chat(prompt)
+            result["reply"] = chat["content"]
+            result["usage"] = chat["usage"]
+            result["reasoning"] = chat["reasoning"]
+            if not chat["content"]:
+                result["error"] = (
+                    "模型返回空内容: finish_reason=" + str(chat["finishReason"])
+                    + ", usage=" + json.dumps(chat["usage"])
+                )
         except Exception as e:   # noqa: BLE001 - 统一转成 stderr 文本供上层重试
             result["error"] = str(e)
 
@@ -281,12 +292,13 @@ def run_model(prompt: str, label: str = ""):
     elapsed = int(time.time() - start)
     if "error" in result:
         return types.SimpleNamespace(
-            stdout="", stderr=str(result["error"]), returncode=1, elapsed=elapsed
+            stdout="", stderr=str(result["error"]), returncode=1, elapsed=elapsed,
+            usage=result.get("usage") or {}, reasoning=result.get("reasoning") or ""
         )
     reply = result.get("reply") or ""
     return types.SimpleNamespace(
         stdout=reply, stderr="", returncode=0, elapsed=elapsed,
-        usage=result.get("usage") or {}
+        usage=result.get("usage") or {}, reasoning=result.get("reasoning") or ""
     )
 
 
@@ -393,8 +405,10 @@ def main() -> int:
         print("缺少 " + bugs_path + ", 请先运行 select_bugs.py", file=sys.stderr)
         return 1
     bugs = json.load(open(bugs_path))["bugs"]
-    for sub in ("replies", "patches"):
+    for sub in ("patches", "replies/completion", "replies/reasoning"):
         os.makedirs(os.path.join(base, sub), exist_ok=True)
+    completion_dir = os.path.join(base, "replies", "completion")
+    reasoning_dir = os.path.join(base, "replies", "reasoning")
 
     manifest_path = os.path.join(base, "patches.json")
     manifest = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
@@ -433,7 +447,7 @@ def main() -> int:
         total_elapsed = 0
         attempts_log = []
         last_usage = {}
-        for attempt in range(1, 1 + RETRIES):
+        for attempt in range(1, RETRIES + 2):   # 至少尝试 1 次; RETRIES 为额外重试次数
             proc = run_model(prompt, label=f"{bid[:12]} 第{attempt}次")
             total_elapsed += proc.elapsed
             usage = getattr(proc, "usage", {})
@@ -446,12 +460,19 @@ def main() -> int:
             })
 
             combined = (proc.stdout or "") + chr(10) + (proc.stderr or "")
-            with open(os.path.join(base, "replies", f"{bid}.txt"), "w") as fp:
+            reasoning = getattr(proc, "reasoning", "") or ""
+            with open(os.path.join(completion_dir, f"{bid}.txt"), "w") as fp:
                 fp.write(combined)
+            if reasoning:
+                with open(os.path.join(reasoning_dir, f"{bid}.txt"), "w") as fp:
+                    fp.write(reasoning)
             if attempt > 1:
                 # 每次尝试的原始回复留证
-                with open(os.path.join(base, "replies", f"{bid}.att{attempt}.txt"), "w") as fp:
+                with open(os.path.join(completion_dir, f"{bid}.att{attempt}.txt"), "w") as fp:
                     fp.write(combined)
+                if reasoning:
+                    with open(os.path.join(reasoning_dir, f"{bid}.att{attempt}.txt"), "w") as fp:
+                        fp.write(reasoning)
 
             patch = extract_patch(combined)
             if patch:
@@ -478,7 +499,7 @@ def main() -> int:
             print(f"[{i}/{len(bugs)}] {bid[:12]} 生成成功 ({len(patch)} 字节, 累计耗时 {mm}m{ss:02d}s, 共尝试 {attempt} 次)")
         else:
             manifest[bid] = {"status": "failed", "reason": reason}
-            print(f"[{i}/{len(bugs)}] {bid[:12]} 最终失败: {reason} (已重试 {RETRIES} 次, 跳过)")
+            print(f"[{i}/{len(bugs)}] {bid[:12]} 最终失败: {reason} (已尝试 {1 + RETRIES} 次, 跳过)")
 
         attempt_costs = [a.get("cost") for a in attempts_log if a.get("cost") is not None]
         entry = {

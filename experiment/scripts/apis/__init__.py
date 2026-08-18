@@ -5,12 +5,13 @@
   dashscope.py      通义千问 (DashScope)
   moonshot.py       Kimi (Moonshot)
   zhipu.py          智谱 GLM
+  openrouter.py     OpenRouter 聚合入口 (临时改走该平台调用 z-ai/glm-5.2)
 
 统一接口 (每个脚本都实现):
   chat_completion(*, model, prompt, effort="", api_key="", style=None,
                   api_base=None, timeout=600, max_tokens=0) -> dict
   返回 dict 统一为:
-    {ok, httpStatus, elapsedSeconds, content, finishReason, reasoningPreview, usage, error}
+    {ok, httpStatus, elapsedSeconds, content, finishReason, reasoning, reasoningPreview, usage, error}
 
 统一元信息 (每个脚本以模块级常量暴露):
   PROVIDER / DEFAULT_URL / DEFAULT_API_KEY_ENV / DEFAULT_EFFORT_STYLE /
@@ -27,6 +28,7 @@
   thinking_onoff            请求体 thinking={type: enabled|disabled} (如智谱经典格式)
   thinking_effort           请求体 thinking={type, effort} (Kimi K2.x 系列)
   thinking_reasoning_effort 请求体 thinking={type} + 顶层 reasoning_effort (智谱 GLM-5.2+)
+  reasoning_object          请求体 reasoning={effort: <档位>} (OpenRouter 统一接口)
 
 effort 语义: 非空档位 (low/medium/high/max/...) 按平台映射写入;
             空字符串或 off/none/disabled/0 视为"关闭思考" (始终思考型模型不支持关闭,
@@ -42,7 +44,7 @@ import time
 import urllib.error
 import urllib.request
 
-PLATFORMS = ("dashscope", "moonshot", "zhipu")
+PLATFORMS = ("dashscope", "moonshot", "zhipu", "openrouter")
 OFF_EFFORTS = ("", "off", "none", "disabled", "0")
 
 
@@ -77,6 +79,7 @@ def base_reply(data: dict, http_status, elapsed) -> dict:
         "elapsedSeconds": elapsed,
         "content": msg.get("content") or "",
         "finishReason": choice.get("finish_reason"),
+        "reasoning": reasoning or "",
         "reasoningPreview": (reasoning or "")[:300],
         "usage": data.get("usage") or {},
     }
@@ -104,6 +107,10 @@ def apply_effort(body: dict, style: str, effort: str, mapped: str) -> dict:
         body["thinking"] = {"type": "enabled" if on else "disabled"}
         if on:
             body["reasoning_effort"] = mapped
+    elif style == "reasoning_object":
+        # OpenRouter 统一 reasoning 参数: reasoning={effort: <档位>}; 关闭时省略
+        if on:
+            body["reasoning"] = {"effort": mapped}
     else:
         raise ValueError(f"未知 effort 线格式: {style}")
     return body

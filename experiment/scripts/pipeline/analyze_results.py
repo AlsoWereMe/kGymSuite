@@ -138,28 +138,51 @@ def extract_failure_reason(base: str, bug_id: str, entry: dict, cls: str) -> dic
 
 
 def db_cross_check(db_path: str, entries: dict) -> dict:
-    """与 scheduler.db 的 jobDigest/jobTag 交叉校验 dashboard 记录。"""
+    """与 scheduler.db 的 jobDigest/jobTag 交叉校验 dashboard 记录。
+
+    直接按 results.json 里的 jobId 比对 jobDigest, 不再用 bugId 反查 jobTag:
+    同一 bug 会被多次提交 (不同模型/重跑), jobTag 会累积多行, 旧实现用
+    dict 去重会取到最后一条, 拿错 job 造成假不一致。
+    同时校验该 job 上的 bugId 标签与 results.json 一致。
+    jobId 统一按 JobId 语义转成 int (results.json 存的是 8 位十六进制字符串)。
+    """
     out = {"db": db_path, "matched": 0, "mismatches": [], "error": None}
     try:
         con = sqlite3.connect(db_path)
         con.row_factory = sqlite3.Row
         cur = con.cursor()
         cur.execute("SELECT jobId, status FROM jobDigest")
-        digest = {str(r["jobId"]): r["status"] for r in cur.fetchall()}
+        digest = {int(r["jobId"]): r["status"] for r in cur.fetchall()}
         cur.execute("SELECT jobId, tagValue FROM jobTag WHERE tagKey='bugId'")
-        bug_to_job = {r["tagValue"]: str(r["jobId"]) for r in cur.fetchall()}
+        tag_rows = list(cur.fetchall())
         con.close()
     except sqlite3.Error as e:
         out["error"] = str(e)
         return out
 
+    tags: dict[int, list[str]] = {}
+    for r in tag_rows:
+        tags.setdefault(int(r["jobId"]), []).append(r["tagValue"])
+
     for bug_id, entry in entries.items():
         jid = entry.get("jobId")
-        db_status = digest.get(bug_to_job.get(bug_id, ""))
+        try:
+            key = int(jid, 16) if isinstance(jid, str) else int(jid)
+        except (TypeError, ValueError):
+            out["mismatches"].append({"bugId": bug_id, "jobId": jid,
+                                      "resultsStatus": entry.get("status"),
+                                      "dbStatus": "bad-jobId"})
+            continue
+        db_status = digest.get(key)
         if db_status is None:
             out["mismatches"].append({"bugId": bug_id, "jobId": jid,
                                       "resultsStatus": entry.get("status"),
                                       "dbStatus": "missing"})
+        elif bug_id not in tags.get(key, []):
+            out["mismatches"].append({"bugId": bug_id, "jobId": jid,
+                                      "resultsStatus": entry.get("status"),
+                                      "dbStatus": db_status,
+                                      "taggedBugIds": tags.get(key, [])})
         elif db_status != entry.get("status"):
             out["mismatches"].append({"bugId": bug_id, "jobId": jid,
                                       "resultsStatus": entry.get("status"),

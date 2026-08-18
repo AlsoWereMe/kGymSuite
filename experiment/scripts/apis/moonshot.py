@@ -60,7 +60,7 @@ def chat_completion(*, model, prompt, effort="", api_key="", style=None,
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", required=True, help="模型名 (如 kimi-k3)")
-    ap.add_argument("--effort", default="high", help="思考力度 (low/medium/high/max)")
+    ap.add_argument("--effort", default="high", help="思考力度 (K3 仅支持 low/high/max)")
     ap.add_argument("--style", default=None, help="线格式 (默认 " + DEFAULT_EFFORT_STYLE + ")")
     ap.add_argument("--prompt", default="Reply with exactly two characters: OK")
     ap.add_argument("--api-base", default=None, help="覆盖默认接口地址")

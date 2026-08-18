@@ -1,13 +1,16 @@
-"""通义千问 (DashScope) 官方 API 调用脚本。
+"""OpenRouter 聚合平台 API 调用脚本 (临时: 用于改走 OpenRouter 调用 z-ai/glm-5.2)。
 
-接口: OpenAI 兼容模式 chat/completions
-认证: Authorization: Bearer $DASHSCOPE_API_KEY
-推理强度: reasoning_effort, qwen3.8-max 官方档位 xhigh(默认)/medium/low;
-          用户档位 max/high 自动映射为 xhigh, minimal 映射为 low,
-          none/off 视为关闭思考 (reasoning_effort 线格式下省略该字段)
+接口: OpenAI 兼容 chat/completions (base_url https://openrouter.ai/api/v1)
+认证: Authorization: Bearer $OPENROUTER_API_KEY
+推理强度: OpenRouter 统一 reasoning 参数 reasoning:{effort: <档位>},
+          各模型支持档位 (来自 /api/v1/models):
+            qwen/qwen3.8-max    xhigh/high/medium/low/minimal (最高 xhigh)
+            moonshotai/kimi-k3  max/high/low (最高 max)
+            z-ai/glm-5.2        xhigh/high (最高 xhigh)
+线格式: reasoning_object (默认, reasoning:{effort}) 或 reasoning_effort (顶层透传)。
 
 独立冒烟测试 (在 experiment/scripts 目录下):
-  DASHSCOPE_API_KEY=sk-... python apis/dashscope.py --model qwen3.8-max --effort high
+  OPENROUTER_API_KEY=sk-or-... python apis/openrouter.py --model z-ai/glm-5.2 --effort high
 """
 import argparse
 import json
@@ -21,18 +24,18 @@ if __package__ is None or __package__ == "":
 
 from apis import post_json, base_reply, apply_effort
 
-PROVIDER = "dashscope"
-DEFAULT_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-DEFAULT_API_KEY_ENV = "DASHSCOPE_API_KEY"
-DEFAULT_EFFORT_STYLE = "reasoning_effort"
-SUPPORTED_STYLES = ("reasoning_effort", "enable_thinking")
-EFFORT_MAP = {"max": "xhigh", "high": "xhigh", "minimal": "low"}   # 官方别名: max/high→xhigh, minimal→low
+PROVIDER = "openrouter"
+DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_API_KEY_ENV = "OPENROUTER_API_KEY"
+DEFAULT_EFFORT_STYLE = "reasoning_object"
+SUPPORTED_STYLES = ("reasoning_object", "reasoning_effort")
+EFFORT_MAP = {}               # 档位直接透传; 每个模型在 MODELS 里配置其支持的最高档
 
 
 def build_body(model: str, prompt: str, effort: str, style: str, max_tokens: int) -> dict:
     body = {"model": model, "messages": [{"role": "user", "content": prompt}]}
     if max_tokens > 0:
-        body["max_tokens"] = max_tokens
+        body["max_completion_tokens"] = max_tokens
     if effort is not None:
         mapped = EFFORT_MAP.get(effort.lower(), effort)
         apply_effort(body, style, effort, mapped)
@@ -43,7 +46,7 @@ def chat_completion(*, model, prompt, effort="", api_key="", style=None,
                     api_base=None, timeout=600, max_tokens=0) -> dict:
     style = style or DEFAULT_EFFORT_STYLE
     if style not in SUPPORTED_STYLES:
-        raise ValueError(f"dashscope 不支持的线格式 {style}, 可选 {SUPPORTED_STYLES}")
+        raise ValueError(f"openrouter 不支持的线格式 {style}, 可选 {SUPPORTED_STYLES}")
     ok, status, elapsed, payload = post_json(
         api_base or DEFAULT_URL, api_key,
         build_body(model, prompt, effort, style, max_tokens), timeout)
@@ -59,8 +62,8 @@ def chat_completion(*, model, prompt, effort="", api_key="", style=None,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", required=True, help="模型名 (如 qwen3.8-max)")
-    ap.add_argument("--effort", default="high", help="推理强度 (low/medium/high/max, max->xhigh)")
+    ap.add_argument("--model", required=True, help="模型名 (如 z-ai/glm-5.2)")
+    ap.add_argument("--effort", default="high", help="推理强度 (z-ai/glm-5.2 支持 high/xhigh)")
     ap.add_argument("--style", default=None, help="线格式 (默认 " + DEFAULT_EFFORT_STYLE + ")")
     ap.add_argument("--prompt", default="Reply with exactly two characters: OK")
     ap.add_argument("--api-base", default=None, help="覆盖默认接口地址")
