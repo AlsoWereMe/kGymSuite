@@ -1,9 +1,10 @@
-FROM golang:1.24.6-bookworm AS syzkaller
+FROM golang:1.26.0-bookworm AS syzkaller
 
 WORKDIR /
 RUN apt update && apt install git -y && git clone https://github.com/google/syzkaller.git
 WORKDIR /syzkaller
-RUN make all crush -j$(nproc)
+ARG BUILD_JOBS=4
+RUN make all crush -j${BUILD_JOBS}
 
 FROM python:3.11-bookworm AS kvmmanager-base
 
@@ -14,7 +15,7 @@ WORKDIR /root
 COPY --from=syzkaller /syzkaller/bin/syz-crush /usr/local/bin/syz-crush
 
 # Install Golang toolchain;
-RUN wget "https://dl.google.com/go/go1.24.6.linux-amd64.tar.gz" -O go.tar.gz && tar -C /usr/local -xzf go.tar.gz
+RUN wget "https://dl.google.com/go/go1.26.0.linux-amd64.tar.gz" -O go.tar.gz && tar -C /usr/local -xzf go.tar.gz
 ENV GOROOT=/usr/local/go
 ENV PATH=$GOROOT/bin:$PATH
 

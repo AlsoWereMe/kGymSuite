@@ -1,7 +1,7 @@
 {
     "deploymentName": "turing",
     "allowedOrigins": [
-        "https://kgym.example.com"
+        "http://localhost:3000"
     ],
     "storage": {
         "providerType": "local",
@@ -67,7 +67,7 @@
         }
     },
     "dbPath": "/root/scheduler-db/scheduler.db",
-    "kGymAPIEndpoint": "https://kgym-api.example.com",
+    "kGymAPIEndpoint": "http://localhost:8000",
     "servers": {
         "main": {
             "user": "ubuntu",
