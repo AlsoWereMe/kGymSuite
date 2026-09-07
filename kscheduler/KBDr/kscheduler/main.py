@@ -1,5 +1,6 @@
 # main.py
-import uvicorn, os
+import asyncio, os, time, uvicorn
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -7,6 +8,11 @@ from .scheduler_server import SchedulerServer
 from fastapi.middleware.cors import CORSMiddleware
 from .config import SchedulerConfig
 import aio_pika
+
+logger = logging.getLogger('uvicorn.error')
+
+MQ_STARTUP_TIMEOUT_SECONDS = 300
+MQ_RECONNECT_DELAY_MAX = 30
 
 class SystemInfo(BaseModel):
     deploymentName: str
@@ -23,11 +29,27 @@ class SchedulerApplication:
         async def get_system_info() -> SystemInfo:
             return SystemInfo(deploymentName=self._config.deploymentName)
 
+    async def _connect_mq(self) -> aio_pika.abc.AbstractRobustConnection:
+        startup_deadline = time.monotonic() + MQ_STARTUP_TIMEOUT_SECONDS
+        attempt = 0
+        while True:
+            try:
+                return await aio_pika.connect_robust(os.environ['KGYM_MQ_CONN_URL'])
+            except aio_pika.exceptions.AMQPConnectionError as exc:
+                if time.monotonic() >= startup_deadline:
+                    raise
+                attempt += 1
+                delay = min(2 ** attempt, MQ_RECONNECT_DELAY_MAX)
+                logger.warning(
+                    f'MQ connection attempt {attempt} failed: {exc}; retrying in {delay}s'
+                )
+                await asyncio.sleep(delay)
+
     def main(self):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             await self._backend.start()
-            mq_conn = await aio_pika.connect_robust(os.environ['KGYM_MQ_CONN_URL'])
+            mq_conn = await self._connect_mq()
             self._scheduler_server = SchedulerServer(mq_conn, self._backend)
             await self._backend.mount_apis(app)
             await self._scheduler_server.mount_apis(app)
