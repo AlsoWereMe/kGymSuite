@@ -167,4 +167,9 @@ cython_debug/
 dev-conf/
 experiments/
 
+# External data (downloaded, large)
 dataset/
+kGym-images/
+
+# One-off local helpers
+show_crash.py
