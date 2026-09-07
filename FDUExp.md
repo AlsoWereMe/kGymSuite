@@ -75,7 +75,7 @@ RUN wget "https://dl.google.com/go/go1.26.0.linux-amd64.tar.gz" -O go.tar.gz && 
 RUN make all crush -j$(nproc)
 ```
 
-这会使得拉起和内核数相同的编译进程，每个Go进程大概在1-2GB，如果内存不能保证大于2*CPU核数 GB的话，OOM几乎是必然的，需要修改
+这会使得拉起和内核数相同的编译进程，每个Go进程大概在1-2GB，如果内存不能保证大于{2*CPU核数}GB的话，OOM几乎是必然的，需要修改
 
 ```dockerfile
 ARG BUILD_JOBS=4
@@ -83,23 +83,6 @@ RUN make all crush -j${BUILD_JOBS}
 ```
 
 可以根据情况调整具体构建进程数
-此外，为了更有效防止OOM，可以提高交换空间大小，适合磁盘空间大的人使用
-```bash
-sudo swapoff /swap.img
-sudo fallocate -l 8G /swap.img       # 若 fallocate 不支持，用: sudo dd if=/dev/zero of=/swap.img bs=1M count=8192
-sudo chmod 600 /swap.img
-sudo mkswap /swap.img
-sudo swapon /swap.img
-free -h && swapon --show            # 验证
-```
-
-> ⚠️ 缩容已有 swap（如 16G → 8G）：`fallocate -l` **只能扩不能缩**，必须先删掉旧文件再重建：
-> ```bash
-> sudo swapoff /swap.img && sudo rm /swap.img && sudo fallocate -l 8G /swap.img && \
-> sudo chmod 600 /swap.img && sudo mkswap /swap.img && sudo swapon /swap.img
-> # 或删文件一步换成: sudo truncate -s 8G /swap.img
-> ```
-> 验证: `swapon --show` 的 SIZE 应为 8G, `ls -l /swap.img` 应为 8589934592。
 
 ## Deploy
 ### Local Storage
