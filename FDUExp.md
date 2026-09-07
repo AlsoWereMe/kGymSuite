@@ -158,3 +158,25 @@ DEPLOYMENT=local docker compose -f ./deployment/local/compose.yml ps
 服务的端口位置在：
 - Dashboard: http://localhost:3000
 - API: http://localhost:8000/docs
+
+## kClient
+
+kGym的客户端和命令行工具是kClient，提交内核构建/崩溃复现作业、查看状态和日志、加载数据集，都在这里完成。
+
+使用下面的命令配置kclient环境：
+
+```shell
+pip install -e ./kcore
+pip install -e ./kclient
+```
+
+## Dataset
+
+评估用到的数据集是kBenchSyz，近年有更新，对应的hugging face仓库位于https://huggingface.co/datasets/chenxi-kalorona-huang/kbench，可以使用下列命令将数据集下载最新的dataset-kb-25浏览内容
+
+```shell
+curl -L -o dataset-kb-25.json https://huggingface.co/datasets/chenxi-kalorona-huang/kbench/resolve/main/dataset-kb-25.json
+```
+
+
+
